@@ -6,7 +6,6 @@ int createFile(char* filename, int fileSize) {
     if (fileSize % BLOCKSIZE != 0) {
         blocks++;
     }
-    printf("\n\nOpening and creating %d-block file %s...\n", blocks, filename);
     int fd = tfs_openFile(filename);
     if (fd == -1) {
         printf("Failed to open file.\n");
@@ -52,6 +51,20 @@ void print_file_contents(char* filename, int fd, int size)
     printf("   %s file contents: %s\n", filename, file_contents);
 }
 
+
+//********************************************************************************
+//  Testing Helpers
+//  - createFile - ask the tfs to create a file of a certain size
+//      - format of file will be "Starting <filename>____Data End" with 
+//        underscores filling the rest of the space
+//  - deleteFile - ask the tfs to delete a file
+//  - print_file_contents - ask the tfs to read the file and print the contents
+//  - debug_print_filesystem - ask tfs to printout free block chain, inode block 
+//      chain, and data block chain
+//  - debug_write_fileblocks - ask tfs to write all the file data blocks to
+//      files "block0x" for inspection.
+//
+//********************************************************************************
 int main() {
     char* filename = "tinyFSDisk"; // file name for the disk
     int diskSize = DEFAULT_DISK_SIZE; 
@@ -78,29 +91,39 @@ int main() {
         return 1;
     }
 
+    //debug_print_filesystem();
+    int oneBlockFD = createFile("1Block", 20);
     debug_print_filesystem();
-     int oneBlockFD = createFile("1Block", 20);
-     debug_print_filesystem();
-//    print_file_contents("1Block", oneBlockFD, 20);
 
-     int threeBlockFD = createFile("3Block", DATA_BLOCK_DATA_SIZE * 2 + 2);
+    //debug_write_fileblocks();
+    print_file_contents("1Block", oneBlockFD, 20);
 
-     printf("\nAfter 1 1-block and 1 3-block file created\n");
-     debug_print_filesystem();
+    int threeBlockSize = DATA_BLOCK_DATA_SIZE * 2 + 2;
+    int threeBlockFD = createFile("3Block", threeBlockSize);
 
-     deleteFile(oneBlockFD);
+    printf("\nAfter 1 1-block and 1 3-block file created\n");
+    debug_print_filesystem();
+
+    //print_file_contents("3Block", threeBlockFD, threeBlockSize);
+
+    deleteFile(oneBlockFD);
     
     //  printf("\n\nAfter 1-block deleted\n");
     //  debug_print_filesystem();
 
-    int twoBlockFD = createFile("2Block", DATA_BLOCK_DATA_SIZE  + 1);
+    int twoBlockSize = DATA_BLOCK_DATA_SIZE  + 1;
+    int twoBlockFD = createFile("2Block", twoBlockSize);
 
     printf("\n\nAfter 2-block created-fragmented system\n");
     debug_print_filesystem();
 
+    //print_file_contents("2Block", twoBlockFD, twoBlockSize);
 
-    // deleteFile(twoBlockFD);
-    // deleteFile(threeBlockFD);
+
+    deleteFile(twoBlockFD);
+    deleteFile(threeBlockFD);
+
+    debug_print_filesystem();
 
 
 //     //open a file in the TinyFS file system

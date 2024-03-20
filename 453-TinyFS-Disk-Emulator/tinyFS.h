@@ -51,3 +51,4 @@ int tfs_seek(fileDescriptor FD, int offset);
 int tfs_get_mounted_disk( );
 void debug_print_freechain();
 void debug_print_filesystem();
+void debug_write_fileblocks();

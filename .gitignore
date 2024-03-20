@@ -1,0 +1,5 @@
+*.o
+block*
+tinyFSDisk
+tinyTest
+
