@@ -26,6 +26,10 @@
 #define _NAME 4 //char[9], file name
 #define _SIZE 13 //int, file size
 #define _CONTENT_BLOCK_HEAD 17 //int, block number of the first data block
+#define _CREATION_TIME 21   // time_t is 8 bytes
+#define _LAST_MODIFICATION_TIME 29   // time_t is 8 bytes
+#define _LAST_ACCESS_TIME 37   // time_t is 8 bytes
+
 
 
 typedef struct {
@@ -46,8 +50,9 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size);
 int tfs_deleteFile(fileDescriptor FD);
 int tfs_readByte(fileDescriptor FD, char *buffer);
 int tfs_seek(fileDescriptor FD, int offset);
-int tfs_rename(fileDescriptor FD, char* newName);   // extra cred
-void tfs_readdir(); // extra credit
+int tfs_rename(fileDescriptor FD, char* newName);   // extra credit b
+void tfs_readdir(); // extra credit b
+int tfs_readFileInfo(fileDescriptor FD);    // extra credit e
 
 // TODO Remove these
 int tfs_get_mounted_disk( );

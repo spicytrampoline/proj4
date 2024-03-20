@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>   // for timestamps
 #include "libDisk.h" // Include the disk emulator library
 #include "tinyFS.h"
 
@@ -343,6 +344,14 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
         next_block = data_block_idx;    // save for when we move backwards
 
         writeBlock(mounted_disk, data_block_idx, block_data);
+
+        // TODO MODIFICATION TIME
+        time_t current_time = time(NULL);
+        char timeBytes[8];
+        memcpy(timeBytes, &current_time, sizeof(current_time));
+        memcpy(&(inode[_LAST_MODIFICATION_TIME]), timeBytes, 8);
+        //memcpy(&(inode[_LAST_MODIFICATION_TIME]), current_time, 8);
+
     }
 
     writeBlock(mounted_disk, SUPERBLOCK_BLOCK_NUM, superblock); //add updated write block
@@ -451,6 +460,7 @@ int tfs_readByte(fileDescriptor FD, char *buffer) {
     return 0;
     
     //I'm not sure if this is the correct way to read the file
+
 }
 
 int tfs_seek(fileDescriptor FD, int offset) {
@@ -638,4 +648,24 @@ void tfs_readdir() {
 
         walk = inode[_BLOCK_POINTER];
     }
+}
+
+
+/* EXTRA CREDIT OPTION E */
+int tfs_readFileInfo(fileDescriptor FD) {
+    // Check fd valid
+    if (FD < 0 || FD >= FILE_TABLE_SIZE) {
+        printf("The FD is invalid.\n");
+        return -1; // failure (Invalid file descriptor)
+    }
+    
+    // get inode
+    char inode[BLOCKSIZE];
+    readBlock(mounted_disk, fileTable[FD].inodeBlock, &inode);
+    printf("File: %s\n", &(inode[_NAME]));
+    printf("\tCreation: %d\n", &(inode[_CREATION_TIME]));
+    printf("\tAccess: \n", &(inode[_LAST_ACCESS_TIME]));
+    printf("\tModify: \n", &(inode[_LAST_MODIFICATION_TIME]));
+
+    return 0;
 }

@@ -96,11 +96,13 @@ int main() {
 
     //printf("\n\nRenaming file...\n");
     int twoBlockFD = createFile("2Block", DATA_BLOCK_DATA_SIZE + 1);
-    
+
     tfs_rename(oneBlockFD, "Block");
+
+    tfs_readFileInfo(twoBlockFD);
     //debug_print_filesystem();
 
-    tfs_readdir();
+    //tfs_readdir();
 
     //int twoBlockFD = createFile("2Block", DATA_BLOCK_DATA_SIZE + 1);
     //debug_print_filesystem();
