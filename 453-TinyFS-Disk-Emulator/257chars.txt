@@ -1,0 +1,1 @@
+chmod - change permissions can use letters, or short hand 3 numbers for ugo. 700 for example sets rwx for user, and --- for group and other.chmod - change permissions can use letters, or short hand 3 numbers for ugo. 700 for example sets rwx for user, anjew

@@ -5,7 +5,7 @@
 #include "tinyFS.h"
 
 FileTableEntry fileTable[FILE_TABLE_SIZE]; // file table to track open files
-int recycle_fd[FILE_TABLE_SIZE] = {0};
+
 //I think the table needs to be dynamic, not a fixed size. I'm not sure how to implement this at the moment.
 int nextFileDescriptor = 0; // next available file descriptor
 
@@ -13,6 +13,67 @@ static int mounted = 0; // flag to indicate whether a file system is mounted
 static int mounted_disk = -1; // variable to store the disk number of the mounted file system
 
 char superblock[BLOCKSIZE] = {0};
+
+void add_free_block(int disk, int block_num) {
+    char freeBlock[BLOCKSIZE] = {0}; // empty block filled with 0s
+    freeBlock[_BLOCK_TYPE] = 4;      // free block
+    freeBlock[_MAGIC_NUMBER] = 0x44;
+    freeBlock[_BLOCK_POINTER] = superblock[_FREE_BLOCK_HEAD];
+    writeBlock(disk, block_num, freeBlock);
+
+    superblock[_FREE_BLOCK_HEAD] = block_num;
+    superblock[_NUM_FREE_BLOCKS]++;
+
+    //printf("free block added: free block next is %d superblock head is %d\n", freeBlock[_BLOCK_POINTER], superblock[_FREE_BLOCK_HEAD]);
+}
+
+int get_free_block() {
+    int free_block = superblock[_FREE_BLOCK_HEAD];
+    if (free_block == -1) {
+        printf("No free blocks available.\n");
+        return -1; // failure (no free blocks available) so return neg
+    }
+    char freeBlock[BLOCKSIZE] ;
+    readBlock(mounted_disk, free_block, &freeBlock);
+
+    superblock[_FREE_BLOCK_HEAD] = freeBlock[_BLOCK_POINTER];
+    superblock[_NUM_FREE_BLOCKS]--;
+
+    
+    return free_block;
+}
+
+void free_block_chain(int head)
+{
+    char freeBlock[BLOCKSIZE] = {0}; // empty block filled with 0s
+    int walk = head;
+    while (walk != -1)
+    {
+        readBlock(mounted_disk, walk, freeBlock);
+        int prev = walk;
+        walk = freeBlock[_BLOCK_POINTER];
+        add_free_block( mounted_disk, prev);
+    }
+}
+
+int getFileDescriptor() {
+    for (int i = 0; i < FILE_TABLE_SIZE; i++) {
+        if (fileTable[i].inodeBlock == -1) {
+            return i;
+        }
+    }
+
+    //TODO Reallocate table
+    printf("File table is full.\n");
+    return -1;
+}
+
+void releaseFileDescriptor(int FD)
+{
+    fileTable[FD].inodeBlock = -1;
+    fileTable[FD].filePointer = -1;
+
+}
 
 int tfs_mkfs(char *filename, int nBytes) {
     // check if nBytes is valid
@@ -26,67 +87,29 @@ int tfs_mkfs(char *filename, int nBytes) {
         return -1; // failure (unable to open disk file) so return neg
     }
     
-    // create and initialize the superblock
-    // superblock.magicNumber = 0x44; // magic # for TinyFS
-    // superblock.rootInodeBlock = 1; // root inode block starts from block 1
-    // superblock.numFreeBlocks = DEFAULT_DISK_SIZE / BLOCKSIZE - 2;
-    // int freeBlockIndex = 2;
-    // superblock.freeBlocks = (unsigned char*)malloc(sizeof(char)*superblock.numFreeBlocks); // first free block starts from block 2
-    // for (int i = 0; i < superblock.numFreeBlocks; i++) {
-    //     superblock.freeBlocks[i] = 0;
-    // }
-    // empty block filled with 0s
+    
     superblock[_BLOCK_TYPE] = 1;
     superblock[_MAGIC_NUMBER] = 0x44;
-    // superblock[_ROOT_INODE_BLOCK] = 1;
-    superblock[_FREE_BLOCK_INDEX] = 1; //is this 1 or 2?
-    superblock[_NUM_FREE_BLOCKS] = DEFAULT_DISK_SIZE / BLOCKSIZE - 2;
+    superblock[_ROOT_INODE_BLOCK] = -1;
+    superblock[_FREE_BLOCK_HEAD] = -1; 
+    superblock[_TOTAL_BLOCKS] = nBytes / BLOCKSIZE;
+    superblock[_NUM_FREE_BLOCKS] = 0;
+
+
+    for (size_t i = 1; i < superblock[_TOTAL_BLOCKS]; i++)
+    {
+        add_free_block(disk, i);
+    }
     
     // write the superblock to the disk
-    if (writeBlock(disk, 0, &superblock) != 0) {     // TODO &superblock
+    if (writeBlock(disk, SUPERBLOCK_BLOCK_NUM, &superblock) != 0) {     // TODO &superblock
         closeDisk(disk);
         return -1; // failure (unable to write superblock) so return neg
     }
 
-    printf("superblock info: %d %d %d %d %d\n", superblock[_BLOCK_TYPE], superblock[_MAGIC_NUMBER], superblock[_ROOT_INODE_BLOCK], superblock[_FREE_BLOCK_INDEX], superblock[_NUM_FREE_BLOCKS]);
-    
-    // initialize and write root inode (assume it's a single block?)
-    // char rootInode[BLOCKSIZE] = {0}; // empty block filled with 0s
-    // rootInode[_BLOCK_TYPE] = 2; // inode block type
-    // rootInode[_MAGIC_NUMBER] = 0x44; // magic number for inode block
-    // strcpy(&rootInode[_NAME], "root"); // Copy the string "root" into the inode block
-
-    // // printing to verify the contents of the inode block
-    // printf("rootInode[_BLOCK_TYPE]: %d\n", rootInode[_BLOCK_TYPE]);
-    // printf("rootInode[_MAGIC_NUMBER]: %x\n", rootInode[_MAGIC_NUMBER]);
-    // printf("rootInode[_NAME]: %s\n", &rootInode[_NAME]);
-
-    //we do not need to make an inode called "root" at the start of block... we can just start adding inodes
-    // strcpy(&rootInode[_NAME], "root"); 
-    // rootInode[_SIZE] = 0; // root directory size (empty for now)
-    // rootInode[_DATA_BLOCK] = -1; // no data blocks allocated for root directory yet
-    
-    // write the root inode to the disk
-    // if (writeBlock(disk, 1, &rootInode) != 0) {
-    //     closeDisk(disk);
-    //     return -1; // failure (unable to write root inode) so return neg
-    // }
-    
-    // initialize and write free blocks (remaining blocks after superblock and root inode)
-    char emptyBlock[BLOCKSIZE] = {0}; // empty block filled with 0s
-    
-    emptyBlock[0] = 4; // Signify free block
-    emptyBlock[1] = 0x44; // Signify magic number
-    
-    //printf("mkfs empty block for loop spans range [2, %d]\n", nBytes / BLOCKSIZE);
-    for (int i = 1; i < nBytes / BLOCKSIZE; i++) {
-        //printf("mkfs about to write empty block for disk %d\n", disk);
-        if (writeBlock(disk, i, emptyBlock) != 0) {
-            closeDisk(disk);
-            return -1; // failure (unable to write free block) so return neg
-        }
-        //printf("mkfs wrote empytblock\n");
-    }
+    printf("superblock info: type: %d magid: %d inode: %d free_head:%d num_free:%d total:%d\n", superblock[_BLOCK_TYPE], 
+        superblock[_MAGIC_NUMBER], superblock[_ROOT_INODE_BLOCK], superblock[_FREE_BLOCK_HEAD], superblock[_NUM_FREE_BLOCKS], 
+        superblock[_TOTAL_BLOCKS]);
     
     // close disk file (should this be here?)
     closeDisk(disk);
@@ -108,8 +131,7 @@ int tfs_mount(char *diskname) {
     }
     printf("in mount, opened disk %d\n", disk);
 
-    // read superblock from disk via libDisk
-    Superblock superblock;  // 13 bytes made
+    // read superblock from disk via libDisk    
     if (readBlock(disk, SUPERBLOCK_BLOCK_NUM, &superblock) != 0) {
         closeDisk(disk);
         printf("Failed to read superblock.\n");
@@ -119,7 +141,7 @@ int tfs_mount(char *diskname) {
     //printf("superblock info: %d %d %d %d %d %s\n", superblock.blockType, superblock.magicNumber, superblock.rootInodeBlock, superblock.freeBlockIndex, superblock.numFreeBlocks, superblock.freeSpace);
 
     // check if magic number is correct
-    if (superblock.magicNumber != 0x44) {
+    if (superblock[_MAGIC_NUMBER] != 0x44) {
         closeDisk(disk);
         printf("Incorrect magic number. Not a TinyFS filesystem.\n");
         return -1; // failure (not a TinyFS filesystem) so return neg
@@ -130,7 +152,12 @@ int tfs_mount(char *diskname) {
     mounted_disk = disk;
     printf("tfs_mount: mounted_disk = %d\n", mounted_disk);
 
-    printf("File system mounted successfully.\n");
+    //printf("File system mounted successfully.\n");
+
+    for (int i = 0; i < FILE_TABLE_SIZE; i++) {
+        fileTable[i].inodeBlock = -1;
+        fileTable[i].filePointer = -1;
+    }
 
     return 0; // success
 }
@@ -167,107 +194,65 @@ fileDescriptor tfs_openFile(char *name) {
         return -1;
     }
 
-    if (strnlen(name, 8) == 0) {
-        printf("Name too short.\n");
-        return -1;
-    }
+    // if (strnlen(name, 8) == 0) {
+    //     printf("Name too short.\n");
+    //     return -1;
+    // }
 
     // check if file already exists
     char inode[BLOCKSIZE] = {0};
     int inodeIndex = -1;
-    for (int i = 0; i < BLOCK_COUNT-1; i++) {    // should run through all inodes
+    int inode_walk = superblock[_ROOT_INODE_BLOCK];
+    while (inode_walk != -1)
+    {    // should run through all inodes
         // to find if file already exists, we want to run through each name and compare to our input name
-        if (readBlock(mounted_disk, 1 + i, inode) != 0) { //inode and file extent blocks start from block 1
-            printf("Failed to read root inode block.\n");
+        if (readBlock(mounted_disk, inode_walk, inode) != 0) { //inode and file extent blocks start from block 1
+            printf("Failed to read inode block.\n");
             return -1; // failure (unable to read root inode block)
         }
-        printf("] tfs_openFile SUPERBLOCK INODE INFO:\n");      // was originally root
-        printf("    ] rootInode[_BLOCK_TYPE]: %d\n", inode[_BLOCK_TYPE]);
-        printf("    ] rootInode[_MAGIC_NUMBER]: %x\n", inode[_MAGIC_NUMBER]);
-        printf("    ] rootInode[_NAME]: %s\n", &inode[_NAME]);
-        printf("] END ROOT INODE INFO\n");
-        //its block loaded is in fact an inode block (and not a data block)
-       
-        // look for a free inode from root inode
-        if (inode[_BLOCK_TYPE] == 2 && inode[_MAGIC_NUMBER] == 0x44){  // first root inode     
-            char temp_name[9] = {0};
-            memcpy(&temp_name, &inode[_NAME], 9);
-            if (strcmp(temp_name, name) == 0) {     // compare names to see if file alreay exists 
-                inodeIndex = i+1;
-                break;
-            }
-            if (inodeIndex != -1) {
-                break;
-            }
+        char temp_name[9] = {0};
+        memcpy(&temp_name, &inode[_NAME], 9);
+        if (strcmp(temp_name, name) == 0) {     // compare names to see if file alreay exists 
+            inodeIndex = inode_walk;
+            break;
         }
+        inode_walk = inode[_BLOCK_POINTER];
     }
-    // create a new inode for file since it doesn't exist, put at freeblock
+
+
+    
     if (inodeIndex == -1) {
-        // find free inode block, then free inode within that block
-        char superblock[BLOCKSIZE];
-        int rb = readBlock(mounted_disk, 0, superblock);
-        if (rb == -1) {
-            printf("Failed to read superblock.\n");
-            return -1; // failure (unable to read superblock)
-        }
-        if (superblock[_NUM_FREE_BLOCKS] < 2) {
-            printf("Not enough blocks to create a new inode and file data.\n");
-            return -1;
-        }
+        // create a new inode for file since it doesn't exist
 
-        char emptyBlock[BLOCKSIZE] = {0}; // empty block filled with 0s
-        emptyBlock[_BLOCK_TYPE] = 2; // inode block type
-        emptyBlock[_MAGIC_NUMBER] = 0x44; // magic number for inode block
+        char new_inode[BLOCKSIZE] = {0};
+        new_inode[_BLOCK_TYPE] = 2; // inode block type
+        new_inode[_MAGIC_NUMBER] = 0x44; // magic number for inode block
+        new_inode[_BLOCK_POINTER] = superblock[_ROOT_INODE_BLOCK]; // point to next inode block
         
-        memcpy(&(emptyBlock[_NAME]), name, 8);
-        emptyBlock[_NAME + 8] = '\0';      
-        emptyBlock[_SIZE]= 0;
-        emptyBlock[_DATA_BLOCK] = -1; // no data yet
-        inodeIndex = superblock[_FREE_BLOCK_INDEX];
+        memcpy(&(new_inode[_NAME]), name, 8);
+        new_inode[_NAME + 8] = '\0';      
+        new_inode[_SIZE]= 0;
+        new_inode[_DATA_BLOCK] = -1; // no data yet
         
-        printf("file: %s, freeblockindex: %d\n", name, superblock[_FREE_BLOCK_INDEX]);
-        writeBlock(mounted_disk, inodeIndex, emptyBlock);
+        inodeIndex = get_free_block();        
+        printf("new file: %s, inode: %d\n", name, inodeIndex);
+        writeBlock(mounted_disk, inodeIndex, new_inode);
 
-        superblock[_FREE_BLOCK_INDEX]++;
-        superblock[_NUM_FREE_BLOCKS]--;
-        writeBlock(mounted_disk, 0, superblock); //add updated write block
-
-        // printf("] tfs_openFile INODE INFO:\n");
-        // printf("    ] inode[_BLOCK_TYPE]: %d\n", emptyBlock[_BLOCK_TYPE]);
-        // printf("    ] inode[_MAGIC_NUMBER]: %x\n", emptyBlock[_MAGIC_NUMBER]);
-        // printf("    ] inode[_NAME]: %s\n", &emptyBlock[_NAME]);
-        // printf("] END tfs_openFile INODE INFO\n");
+        superblock[_ROOT_INODE_BLOCK] = inodeIndex;        
+        writeBlock(mounted_disk, SUPERBLOCK_BLOCK_NUM, superblock); //add updated write block
     }
-
-    // check if file table is full
-   
 
     // add entry to file table
-    fileTable[nextFileDescriptor].inodeBlock = inodeIndex; // 1 = root inode block
-    fileTable[nextFileDescriptor].inodeIndex = -1; //inodeIndex % INODES_PER_BLOCK; dont need
-    fileTable[nextFileDescriptor].filePointer = 0;
+    int fileDescriptor = getFileDescriptor();
 
-    printf("fileTable inodeBlock: %d\n", fileTable[nextFileDescriptor].inodeBlock);
-    printf("fileTable inodeIndex: %d\n", fileTable[nextFileDescriptor].inodeIndex);
-    printf("fileTable filePointer: %d\n", fileTable[nextFileDescriptor].filePointer);
+    fileTable[fileDescriptor].inodeBlock = inodeIndex; // 1 = root inode block
+    fileTable[fileDescriptor].filePointer = 0;
 
+    printf("fileTable inodeBlock: %d\n", fileTable[fileDescriptor].inodeBlock);
+    printf("fileTable filePointer: %d\n", fileTable[fileDescriptor].filePointer);
 
     // return file descriptor
-    if (nextFileDescriptor < FILE_TABLE_SIZE){
-        return nextFileDescriptor++;
-    }
-
-    else{
-        for (int i = 0; i < FILE_TABLE_SIZE; i++){
-            if (recycle_fd[i] < 0){
-                recycle_fd[i] = 0;
-                return i;
-            }
-        }
-    }
-
-    printf("File table is full.\n");
-    return -1; // failure (File table full)
+    return fileDescriptor;
 }
 
 
@@ -285,9 +270,7 @@ int tfs_closeFile(fileDescriptor FD) {
 
     //remove entry from file table
     fileTable[FD].inodeBlock = -1;
-    fileTable[FD].inodeIndex = -1;
     fileTable[FD].filePointer = -1;
-    recycle_fd[FD] = -1;
 
     return 0; // success
 }
@@ -309,33 +292,14 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
         return -1; // failure (unable to read inode block)
     }
 
-    // for(int i = 0; i < sizeof(inode); i++) {
-    //     printf("%c\n", inode[i]);
-    // }
     
-    //get the name of the file for FD
-    char name[9] = {0};
-    printf("name is %s\n", name);
-    printf("we want to copy %s\t", &(inode[_NAME]));
-    printf("into source %s\n", name);
-    memcpy(name, &(inode[_NAME]), 9);
-    
-    printf("calling delete\n");
-    tfs_deleteFile(FD); //delete the file (so we can clear the blocks FD was using, sets them to free blocks, shifts everything over
-    printf("buffer after deletion: %s\n", buffer);
-    FD = tfs_openFile(name); //readd the file (so we can write to it again, and it will be at the end of the file table and contiguous!)
-    printf("fd after opening %d\n", FD);
-    //read in superblock to check if there are enough free blocks to write the file
-    char superblock[BLOCKSIZE] = {0};
-    int rb = readBlock(mounted_disk, 0, superblock);
-    if (rb == -1) {
-        printf("Failed to read superblock.\n");
-        return -1; // failure (unable to read superblock)
+    if (inode[_DATA_BLOCK] != -1) { 
+        free_block_chain(inode[_DATA_BLOCK]);
     }
-
+    
     int blocks_avail = superblock[_NUM_FREE_BLOCKS];
-    int blocks_needed = (sizeof(int) * size) / (BLOCKSIZE - 4);
-    if ((sizeof(int) * size) % (BLOCKSIZE - 4) != 0) {
+    int blocks_needed = size / DATA_BLOCK_DATA_SIZE;
+    if (size % DATA_BLOCK_DATA_SIZE != 0) {
         blocks_needed++;
     }
 
@@ -344,46 +308,44 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
         return -1; // failure (Not enough free blocks to write file)
     }
 
-    char* current_buffer = buffer;
+    char* current_buffer;// = buffer;
     printf("blocks_needed: %d\n", blocks_needed);
-    printf("current_buffer: %s\n", current_buffer);
+    //printf("current_buffer: %s\n", current_buffer);
 
-
-    for (int i = 0; i<blocks_needed; i++) {
-        char block_data[BLOCKSIZE];
-        block_data[0] = 3;
-        block_data[1] = 0x44;
-        block_data[2] = 0;
-        block_data[3] = 0;
+    // Work backwards so we can write each block out and then chain it to prev
+    int next_block = -1;
+    for (int i = blocks_needed-1; i>=0; i--) {
+        char block_data[BLOCKSIZE] = {0};
+        block_data[_BLOCK_TYPE] = 3;
+        block_data[_MAGIC_NUMBER] = 0x44;
+        block_data[_BLOCK_POINTER] = next_block;
 
         // int bytes_to_copy = (size - i * (BLOCKSIZE - 4)) > (BLOCKSIZE - 4) ? (BLOCKSIZE - 4) : (size - i * (BLOCKSIZE - 4));
         // memcpy(&block_data[4], current_buffer, bytes_to_copy);
         // current_buffer += bytes_to_copy;
+        int bytes_to_copy = DATA_BLOCK_DATA_SIZE;
+        if (i == blocks_needed - 1) {
+            bytes_to_copy = size % DATA_BLOCK_DATA_SIZE;
+        }
 
-        if (i != blocks_needed -1){ //copy 252 bytes into buffer
-            printf("destination: %s\n", &block_data[4]);
-            printf("source: %s\n", current_buffer);
-            memcpy(&block_data[4], current_buffer, 252);
-            current_buffer += 252;
-        }
-        else{ //copy only the remaining bytes 
-            printf("destination: %s\n", &block_data[4]);
-            printf("source: %s\n", current_buffer);
-            memcpy(&block_data[4], current_buffer, (size % (BLOCKSIZE - 4)));
-        }
+        current_buffer = buffer + (i * DATA_BLOCK_DATA_SIZE);
+        // printf("destination: %s\n", &block_data[4]);
+        // printf("source: %s\n", current_buffer);
+        memcpy(&block_data[4], current_buffer, bytes_to_copy);
         
-        printf("block # %d, text %c\n", i, current_buffer[0]);
+        //printf("block # %d, text %c\n", i, current_buffer[0]);
+        int data_block_idx = get_free_block();
+        next_block = data_block_idx;
 
-        writeBlock(mounted_disk, superblock[_FREE_BLOCK_INDEX], block_data);
-        superblock[_FREE_BLOCK_INDEX]++;
-        superblock[_NUM_FREE_BLOCKS]--;
+        writeBlock(mounted_disk, data_block_idx, block_data);
     }
 
     writeBlock(mounted_disk, 0, superblock); //add updated write block
     
     // int inode_offset = fileTable[FD].inodeIndex; not using anymore
-    inode[_SIZE] = size;
-    inode[_DATA_BLOCK] = superblock[_FREE_BLOCK_INDEX] - blocks_needed;
+    int* inodeSize = (int*)&inode[_SIZE];
+    *inodeSize = size;
+    inode[_DATA_BLOCK] = next_block;
     writeBlock(mounted_disk, fileTable[FD].inodeBlock, inode);
 
     fileTable[FD].filePointer = 0;
@@ -397,69 +359,47 @@ int tfs_deleteFile(fileDescriptor FD) {
         return -1; // failure (Invalid file descriptor)
     }
 
-    //read in inode from inode block on disk (to get size of FD)
+    //read in inode from inode block on disk 
     char inode[BLOCKSIZE];
     if (readBlock(mounted_disk, fileTable[FD].inodeBlock, inode) == -1){ //read in inode block
         printf("Failed to read inode block.\n");
         return -1; // failure (unable to read inode block)
     }
 
-    // int inode_start = fileTable[FD].inodeIndex; //gets the offset of the inode in the inode block
-    int file_bytes =  inode[_SIZE]; //i think size is in ints
+    // Free all the blocks that the file takes up
+    free_block_chain(inode[_DATA_BLOCK]);
 
-    int file_blocks = (file_bytes / (BLOCKSIZE - 4)); //number of blocks the file takes up
-    if ( file_bytes % (BLOCKSIZE - 4) != 0) { //round up (if it does not fit block perfectly
-        file_blocks++;
-    }
+    // We need to free the INODE block for this file
+    int next_inode = inode[_BLOCK_POINTER];
+    if (superblock[_ROOT_INODE_BLOCK] == fileTable[FD].inodeBlock) {
+        superblock[_ROOT_INODE_BLOCK] = next_inode;
+    } else {
+        int inode_walk = superblock[_ROOT_INODE_BLOCK];
+        while (inode_walk != -1)
+        {
+            if (readBlock(mounted_disk, inode_walk, inode) == -1){ //read in inode block
+                printf("Failed to read inode block.\n");
+                return -1; // failure (unable to read inode block)
+            }
 
-    file_blocks++; //add one for the inode block! because were also getting rid of the inode block
-
-    //delete from inode and the following file_blocks 
-    int first_block = fileTable[FD].inodeBlock ; // block # of first data block for FD
-    printf("DELETE_FILE: deleting this many blocks %d\n", file_blocks);
-
-    //read in super, to get root inode used in for-loop
-    char superblock[BLOCKSIZE];
-    int rb = readBlock(mounted_disk, 0, superblock);
-    if (rb == -1) {
-        printf("Failed to read superblock.\n");
-        return -1; // failure (unable to read superblock)
-    }
-
-    printf("free is at %d, first is at %d and is this long %d", superblock[_FREE_BLOCK_INDEX], first_block, file_blocks );
-
-    //move all the files after the deleted file up (removes external fragmentation)
-    for (int i = first_block; i < superblock[_FREE_BLOCK_INDEX]-file_blocks; i++) {
-        printf("deleting block %d\n", i);
-        if (i + file_blocks < FILE_TABLE_SIZE){
-            fileTable[i] = fileTable[i + file_blocks];
-            //read block from disk that we want to move up (aka the data right after FD)
-            char block_data[BLOCKSIZE];
-            readBlock(mounted_disk, superblock[_ROOT_INODE_BLOCK] + file_blocks + i, block_data);         
-            writeBlock(mounted_disk, superblock[_ROOT_INODE_BLOCK] + i, block_data);
+            if (inode[_BLOCK_POINTER] == fileTable[FD].inodeBlock) {
+                inode[_BLOCK_POINTER] = next_inode;
+                writeBlock(mounted_disk, inode_walk, inode);
+                break;
+            }
+            inode_walk = inode[_BLOCK_POINTER];
         }
     }
-    printf("flag - delete function \n");
+    add_free_block(mounted_disk, fileTable[FD].inodeBlock);
 
-    //free all the blocks that should now be free
-    char freeBlock[BLOCKSIZE] = {0}; // empty block filled with 0s
-    freeBlock[0] = 4; // Signify free block
-    freeBlock[1] = 0x44; // Signify magic number
-    for (int i = superblock[_FREE_BLOCK_INDEX]; i < superblock[_FREE_BLOCK_INDEX] + file_blocks; i++) {
-        writeBlock(mounted_disk, i, freeBlock);
-    }
-
+    
     //update superblock
-    superblock[_NUM_FREE_BLOCKS] += file_blocks;
-    superblock[_FREE_BLOCK_INDEX] -= file_blocks;
-    writeBlock(mounted_disk, 0, superblock); //add updated write block
+    writeBlock(mounted_disk, SUPERBLOCK_BLOCK_NUM, superblock); //add updated write block
 
 
-    //do we also remove entry from file table??
-    recycle_fd[FD] = -1;
-    fileTable[FD].inodeBlock = -1;
-    fileTable[FD].inodeIndex = -1;
-    fileTable[FD].filePointer = -1;
+    // Release file table entry
+    releaseFileDescriptor(FD);
+    
     return 0; // TODO added to compile
 }
 
@@ -477,7 +417,8 @@ int tfs_readByte(fileDescriptor FD, char *buffer) {
         return -1; // failure (unable to read inode block)
     }
 
-    int size = inode[_SIZE];
+    int *size_ptr = (int*)&inode[_SIZE];
+    int size = *size_ptr;
 
     int offset = fileTable[FD].filePointer;
 
@@ -486,14 +427,20 @@ int tfs_readByte(fileDescriptor FD, char *buffer) {
         return -1;
     }
 
-    int block_num = fileTable[FD].filePointer / (BLOCKSIZE-4);
+    int block_num = offset / DATA_BLOCK_DATA_SIZE ;
 
     char block[BLOCKSIZE];
-    if (readBlock(mounted_disk, block_num, block) != 0) {
-        printf("Failed to read block.\n");
-        return -1; // failure (unable to read block)
+    int nextBlock = inode[_DATA_BLOCK];
+    for (int i = 0; i <= block_num; i++) {
+        if (readBlock(mounted_disk, nextBlock, block) != 0) {
+            printf("Failed to read block.\n");
+            return -1; // failure (unable to read block)
+        }
+        nextBlock = block[_BLOCK_POINTER];
     }
-    *buffer = block[4+offset];
+
+    int blockOffset = offset - (block_num * DATA_BLOCK_DATA_SIZE);
+    *buffer = block[4+blockOffset];
     return 0;
     
     //I'm not sure if this is the correct way to read the file
@@ -512,6 +459,82 @@ int tfs_seek(fileDescriptor FD, int offset) {
 // DEBUGGING
 int tfs_get_mounted_disk( ) {
     return mounted_disk;
+}
+
+void debug_print_file_chain(int startingBlock)
+{
+    char block[BLOCKSIZE];
+    int block_idx = startingBlock;
+    int max_walk = 1;
+    while (block_idx != -1 && max_walk < 100) {
+        
+        readBlock(mounted_disk, block_idx, block);
+        printf("->%d", block_idx);
+        block_idx = block[_BLOCK_POINTER];
+        max_walk++;
+    }
+    printf("\n");
+}
+
+void debug_print_freechain()
+{
+    char superblock[BLOCKSIZE];
+    int rb = readBlock(mounted_disk, 0, superblock);
+    if (rb == -1) {
+        printf("Failed to read superblock.\n");
+        return; // failure (unable to read superblock)
+    }
+    printf("------ Printing Free Chain ------\n");
+    printf("num free blocks: %d\n", superblock[_NUM_FREE_BLOCKS]);
+    printf("free block head: %d\n", superblock[_FREE_BLOCK_HEAD]);
+    debug_print_file_chain(superblock[_FREE_BLOCK_HEAD]);
+
+}
+
+
+
+void debug_print_files()
+{
+    char superblock[BLOCKSIZE];
+    int rb = readBlock(mounted_disk, 0, superblock);
+    if (rb == -1) {
+        printf("Failed to read superblock.\n");
+        return; // failure (unable to read superblock)
+    }
+    printf("------ Printing Files ------\n");
+    printf("iNode head: %d\n", superblock[_ROOT_INODE_BLOCK]);
+    debug_print_file_chain(superblock[_ROOT_INODE_BLOCK]);
+
+    char inodeBlock[BLOCKSIZE];
+    int inode_block_idx = superblock[_ROOT_INODE_BLOCK];
+    int max_walk = 1;
+    while (inode_block_idx != -1 && max_walk < 100) {
+        
+        readBlock(mounted_disk, inode_block_idx, inodeBlock);
+
+        char name[9] = {0};
+        memcpy(name, &(inodeBlock[_NAME]), 9);
+        int* inodeSize = (int*)&inodeBlock[_SIZE];
+
+        printf("   filename: %s, size: %d\n", name, *inodeSize);
+        printf("        Data block chain: ");
+        debug_print_file_chain(inodeBlock[_DATA_BLOCK]);
+        // print_file_contents(inodeBlock[_DATA_BLOCK], *inodeSize);
+
+
+
+        inode_block_idx = inodeBlock[_BLOCK_POINTER];
+        max_walk++;
+    }
+    printf("\n");
+
+}
+
+void debug_print_filesystem()
+{
+    debug_print_freechain();
+    debug_print_files();
+
 }
 
 /* Read the Superblock */
