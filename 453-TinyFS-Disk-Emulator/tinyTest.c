@@ -89,15 +89,18 @@ int main() {
 
     //debug_print_filesystem();
     int oneBlockFD = createFile("1Block", 20);
-    debug_print_filesystem();
+    //debug_print_filesystem();
 
     //debug_write_fileblocks();
-    print_file_contents("1Block", oneBlockFD, 20);
+    //print_file_contents("1Block", oneBlockFD, 20);
 
-    printf("\n\nRenaming file...\n");
+    //printf("\n\nRenaming file...\n");
+    int twoBlockFD = createFile("2Block", DATA_BLOCK_DATA_SIZE + 1);
+    
     tfs_rename(oneBlockFD, "Block");
-    debug_print_filesystem();
+    //debug_print_filesystem();
 
+    tfs_readdir();
 
     //int twoBlockFD = createFile("2Block", DATA_BLOCK_DATA_SIZE + 1);
     //debug_print_filesystem();

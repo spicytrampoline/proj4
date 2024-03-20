@@ -602,6 +602,10 @@ void debug_print_filesystem()
 
 }
 
+
+
+/* EXTRA CREDIT OPTION B*/
+
 /* This func changes new name*/
 int tfs_rename(fileDescriptor FD, char* newName) {
     if (FD < 0 || FD >= FILE_TABLE_SIZE) {
@@ -624,11 +628,14 @@ int tfs_rename(fileDescriptor FD, char* newName) {
     return 0;
 }
 
+/* We did not implement hierarchy, so we just need to walk the inodes and print the filenames. */
 void tfs_readdir() {
-    // ptr to inode chain superblock[_ROOT_INODE_BLOCK]
-    // while (walk != -1) {
-        // read in block
-        //print filename out
-        // set walk to next one current_inode[_BLOCK_POINTER]
+    int walk = superblock[_ROOT_INODE_BLOCK];    // ptr to inodes
+    char inode[BLOCKSIZE];
+    while (walk != -1) {
+        readBlock(mounted_disk, walk, &inode);
+        printf("%s\n", &(inode[_NAME]));
+
+        walk = inode[_BLOCK_POINTER];
     }
 }
