@@ -25,7 +25,7 @@
 //macros for inode
 #define _NAME 4 //char[9], file name
 #define _SIZE 13 //int, file size
-#define _DATA_BLOCK 17 //int, block number of the first data block
+#define _CONTENT_BLOCK_HEAD 17 //int, block number of the first data block
 
 
 typedef struct {
@@ -33,7 +33,7 @@ typedef struct {
     int filePointer; // current position of the file pointer
 } FileTableEntry;
 
-#define FILE_TABLE_SIZE 10 // max # of open files
+#define FILE_TABLE_SIZE 20 // max # of open files
 
 typedef int fileDescriptor;
 

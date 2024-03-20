@@ -2,10 +2,6 @@
 #include "tinyFS.h"
 
 int createFile(char* filename, int fileSize) {
-    int blocks = fileSize / BLOCKSIZE;
-    if (fileSize % BLOCKSIZE != 0) {
-        blocks++;
-    }
     int fd = tfs_openFile(filename);
     if (fd == -1) {
         printf("Failed to open file.\n");
@@ -98,32 +94,38 @@ int main() {
     //debug_write_fileblocks();
     print_file_contents("1Block", oneBlockFD, 20);
 
-    int threeBlockSize = DATA_BLOCK_DATA_SIZE * 2 + 2;
-    int threeBlockFD = createFile("3Block", threeBlockSize);
+    printf("\n\nAbout to overwrite....\n");
+    tfs_writeFile(oneBlockFD, "SecondMessage!", sizeof("SecondMessage!"));
+    debug_write_fileblocks();
+    print_file_contents("1Block", oneBlockFD, sizeof("SecondMessage!"));
+
+    // int threeBlockSize = DATA_BLOCK_DATA_SIZE * 2 + 2;
+    // int threeBlockFD = createFile("3Block", threeBlockSize);
 
     printf("\nAfter 1 1-block and 1 3-block file created\n");
     debug_print_filesystem();
 
     //print_file_contents("3Block", threeBlockFD, threeBlockSize);
 
-    deleteFile(oneBlockFD);
+    //deleteFile(oneBlockFD);
     
     //  printf("\n\nAfter 1-block deleted\n");
     //  debug_print_filesystem();
 
-    int twoBlockSize = DATA_BLOCK_DATA_SIZE  + 1;
-    int twoBlockFD = createFile("2Block", twoBlockSize);
+    // int twoBlockSize = DATA_BLOCK_DATA_SIZE  + 1;
+    // int twoBlockFD = createFile("2Block", twoBlockSize);
 
-    printf("\n\nAfter 2-block created-fragmented system\n");
-    debug_print_filesystem();
+    // printf("\n\nAfter 2-block created-fragmented system\n");
+    // debug_print_filesystem();
 
     //print_file_contents("2Block", twoBlockFD, twoBlockSize);
 
 
-    deleteFile(twoBlockFD);
-    deleteFile(threeBlockFD);
+    // cleanup
+    // deleteFile(twoBlockFD);
+    // deleteFile(threeBlockFD);
 
-    debug_print_filesystem();
+    //debug_print_filesystem();
 
 
 //     //open a file in the TinyFS file system
