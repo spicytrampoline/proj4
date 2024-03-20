@@ -107,7 +107,7 @@ int tfs_mkfs(char *filename, int nBytes) {
     superblock[_TOTAL_BLOCKS] = nBytes / BLOCKSIZE; // byte 16 - 40 blocks
     
     // adding free blocks (in the beginning, 39)
-    for (size_t i = 1; i < superblock[_TOTAL_BLOCKS]; i++)
+    for (size_t i = superblock[_TOTAL_BLOCKS] - 1; i >= 1; i--)     // do not want to overwrite superblock
     {
         add_free_block(disk, i);
     }
@@ -350,7 +350,7 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
     // int inode_offset = fileTable[FD].inodeIndex; not using anymore
     int* inodeSize = (int*)&inode[_SIZE];   // int ptr fakes 4 bytes
     *inodeSize = size;
-    
+
     inode[_CONTENT_BLOCK_HEAD] = next_block;    // set ptr to last block we wrote (first content block)
     writeBlock(mounted_disk, fileTable[FD].inodeBlock, inode);
 
@@ -602,9 +602,33 @@ void debug_print_filesystem()
 
 }
 
-/* Read the Superblock */
-//   char superblock[BLOCKSIZE];
-//   rb = readBlock(MOUNTED_DISK, 0, superblock);
+/* This func changes new name*/
+int tfs_rename(fileDescriptor FD, char* newName) {
+    if (FD < 0 || FD >= FILE_TABLE_SIZE) {
+        printf("The FD is invalid.\n");
+        return -1; // failure (Invalid file descriptor)
+    }
+    if (sizeof(newName) > 8) {
+        printf("The newname is too long.\n");
+        return -1;
+    }
 
-//   Inode inode;
-// (readBlock(mounted_disk, entry.inodeBlock, &inode) != 0)
+    char inode[BLOCKSIZE];
+    readBlock(mounted_disk, fileTable[FD].inodeBlock, &inode);
+
+    memset(&(inode[_NAME]), '\0', 9); // set MEMORY to null for 9 spots . to blank out old name
+    strcpy(&(inode[_NAME]), newName);   // copy new line in with null ending
+
+    writeBlock(mounted_disk, fileTable[FD].inodeBlock, &inode);
+
+    return 0;
+}
+
+void tfs_readdir() {
+    // ptr to inode chain superblock[_ROOT_INODE_BLOCK]
+    // while (walk != -1) {
+        // read in block
+        //print filename out
+        // set walk to next one current_inode[_BLOCK_POINTER]
+    }
+}

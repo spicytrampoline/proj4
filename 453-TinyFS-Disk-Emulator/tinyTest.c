@@ -94,16 +94,24 @@ int main() {
     //debug_write_fileblocks();
     print_file_contents("1Block", oneBlockFD, 20);
 
-    printf("\n\nAbout to overwrite....\n");
-    tfs_writeFile(oneBlockFD, "SecondMessage!", sizeof("SecondMessage!"));
-    debug_write_fileblocks();
-    print_file_contents("1Block", oneBlockFD, sizeof("SecondMessage!"));
+    printf("\n\nRenaming file...\n");
+    tfs_rename(oneBlockFD, "Block");
+    debug_print_filesystem();
+
+
+    //int twoBlockFD = createFile("2Block", DATA_BLOCK_DATA_SIZE + 1);
+    //debug_print_filesystem();
+
+    // printf("\n\nAbout to overwrite....\n");
+    // tfs_writeFile(oneBlockFD, "SecondMessage!", sizeof("SecondMessage!"));
+    //debug_write_fileblocks();
+    // print_file_contents("1Block", oneBlockFD, sizeof("SecondMessage!"));
 
     // int threeBlockSize = DATA_BLOCK_DATA_SIZE * 2 + 2;
     // int threeBlockFD = createFile("3Block", threeBlockSize);
 
-    printf("\nAfter 1 1-block and 1 3-block file created\n");
-    debug_print_filesystem();
+    // printf("\nAfter 1 1-block and 1 3-block file created\n");
+    // debug_print_filesystem();
 
     //print_file_contents("3Block", threeBlockFD, threeBlockSize);
 

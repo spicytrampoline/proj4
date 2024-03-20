@@ -46,6 +46,8 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size);
 int tfs_deleteFile(fileDescriptor FD);
 int tfs_readByte(fileDescriptor FD, char *buffer);
 int tfs_seek(fileDescriptor FD, int offset);
+int tfs_rename(fileDescriptor FD, char* newName);   // extra cred
+void tfs_readdir(); // extra credit
 
 // TODO Remove these
 int tfs_get_mounted_disk( );
