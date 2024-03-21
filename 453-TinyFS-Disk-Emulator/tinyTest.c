@@ -92,7 +92,12 @@ int main() {
 
     //debug_print_filesystem();
     int oneBlockFD = createFile("1Block", 540);
+
+    int testFD = findFileDescriptorByName("1Block");
+    printf("actual FD : %d, guessed FD: %d\n", oneBlockFD, testFD);
     //debug_print_filesystem();
+
+    tfs_makeRO("1Block");
 
     //debug_write_fileblocks();
     //print_file_contents("1Block", oneBlockFD, 20);
@@ -155,6 +160,11 @@ int main() {
 
     print_file_contents("2Block", twoBlockFD, 1000);
 
+    testFD = findFileDescriptorByName("2Block");
+    printf("actual FD : %d, guessed FD: %d\n", twoBlockFD, testFD);
+    testFD = findFileDescriptorByName("Block");
+    printf("actual FD : %d, guessed FD: %d\n", oneBlockFD, testFD);
+
     /* testing unmounting the system */
     tfs_closeFile(twoBlockFD);
     tfs_unmount();
@@ -172,39 +182,46 @@ int main() {
     char moreWritingStuff[1000] = "I had a tasty burrito today!";
     tfs_writeFile(1, moreWritingStuff, sizeof(moreWritingStuff));
 
-    sleep(4);
+    //sleep(4);
     /* opening + writing to file in file system after unmount-mount + testing creation time */
     oneBlockFD = tfs_openFile("Block");
+    printf("\toneBlockFD: %d\n", oneBlockFD);
     tfs_readFileInfo(oneBlockFD);
     print_file_contents("Block", oneBlockFD, 75);
 
     /* testing creation + modification time after re-opening */
-    sleep(10);
+    //sleep(10);
     oneBlockFD = tfs_openFile("Block");
+    printf("\toneBlockFD: %d\n", oneBlockFD);
     tfs_writeFile(oneBlockFD, moreWritingStuff, sizeof(moreWritingStuff));
     print_file_contents("Block", oneBlockFD, sizeof(moreWritingStuff));
     tfs_readFileInfo(oneBlockFD);
 
     /* testing access time from reading */
-    sleep(10);
+    //sleep(10);
     print_file_contents("Block", oneBlockFD, sizeof(moreWritingStuff));
     tfs_readFileInfo(oneBlockFD);
     //tfs_readFileInfo(twoBlockFD);
     //tfs_readFileInfo(threeBlockFD);
 
     /* testing access time from renaming */
-    sleep(5);
+    //sleep(5);
     tfs_rename(oneBlockFD, "NewName");
     tfs_readFileInfo(oneBlockFD);
 
     twoBlockFD = tfs_openFile("2Block");
+    printf("\ttwoBlockFD: %d\n", twoBlockFD);
     tfs_closeFile(twoBlockFD);
     tfs_rename(twoBlockFD, "NewName2");
     tfs_readFileInfo(twoBlockFD);
 
-    tfs_defrag();
+    // tfs_defrag();
 
-    tfs_displayFragments();
+    // tfs_displayFragments();
+
+    /* Testing find file descriptor by name */
+    testFD = findFileDescriptorByName("NewName");
+    printf("actual FD : %d, guessed FD: %d\n", oneBlockFD, testFD);
 
     /* and finishing the tests */
     tfs_closeFile(oneBlockFD);

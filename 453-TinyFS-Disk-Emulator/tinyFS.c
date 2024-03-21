@@ -5,7 +5,7 @@
 #include "libDisk.h" // Include the disk emulator library
 #include "tinyFS.h"
 
-FileTableEntry fileTable[FILE_TABLE_SIZE]; // file table to track open files
+FileTableEntry fileTable[FILE_TABLE_SIZE] = {0}; // file table to track open files
 
 //I think the table needs to be dynamic, not a fixed size. I'm not sure how to implement this at the moment.
 int nextFileDescriptor = 0; // next available file descriptor
@@ -215,6 +215,7 @@ fileDescriptor tfs_openFile(char *name) {
     int inode_walk = superblock[_ROOT_INODE_BLOCK];
     while (inode_walk != -1)
     {    // should run through all inodes
+        //printf("\tinode_walk: %d\n",inode_walk);
         // to find if file already exists, we want to run through each name and compare to our input name
         if (readBlock(mounted_disk, inode_walk, inode) != 0) { //inode and file extent blocks start from block 1
             printf("Failed to read inode block.\n");
@@ -244,6 +245,7 @@ fileDescriptor tfs_openFile(char *name) {
         new_inode[_NAME + 8] = '\0';  // end file name in null   
         new_inode[_SIZE]= 0;    // size of data extent
         new_inode[_CONTENT_BLOCK_HEAD] = -1; // no data yet- will be head for data linked list (content blocks)
+        new_inode[_READ_WRITE_FLAG] = READ_WRITE_FLAG; //assume read-write to start
 
         time_t current_time = time(NULL);
         char timeBytes[8];
@@ -311,10 +313,14 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
     //read in inode from inode block on disk (to get name of the file of FD)
     char inode[BLOCKSIZE];  // make space to read inode inode
     if (readBlock(mounted_disk, fileTable[FD].inodeBlock, inode) == -1){ //read in inode block using fd table
-        printf("Failed to read inode block.\n");
+        printf("Failed to read inode block %d\n", fileTable[FD].inodeBlock);
         return -1; // failure (unable to read inode block)
     }
 
+    if (inode[_READ_WRITE_FLAG] == READ_ONLY_FLAG) {
+        printf("File opened in read only mode. Cannot write.\n");
+        return -1;
+    }
     
     if (inode[_CONTENT_BLOCK_HEAD] != -1) {     // something already here
         release_file_chain(inode[_CONTENT_BLOCK_HEAD]);
@@ -410,6 +416,11 @@ int tfs_deleteFile(fileDescriptor FD) {
     if (readBlock(mounted_disk, fileTable[FD].inodeBlock, inode) == -1){ //read in inode block
         printf("Failed to read inode block.\n");
         return -1; // failure (unable to read inode block)
+    }
+
+    if (inode[_READ_WRITE_FLAG] == READ_ONLY_FLAG) {
+        printf("File opened in read only mode. Cannot write.\n");
+        return -1;
     }
 
     // Free all the blocks that the file takes up
@@ -723,12 +734,12 @@ void tfs_readdir() {
 
 /* EXTRA CREDIT OPTION E */
 int tfs_readFileInfo(fileDescriptor FD) {
-    // Check if mounted
+    // check if mounted
     if (!mounted) {
         printf("No file system is currently mounted.\n");
         return -1; // failure (no file system mounted)
     }
-    // Check fd valid
+    // check fd valid
     if (FD < 0 || FD >= FILE_TABLE_SIZE) {
         printf("The FD is invalid.\n");
         return -1; // failure (Invalid file descriptor)
@@ -790,12 +801,12 @@ void tfs_defrag() {
 
     printf("Defragmenting filesystem...\n");
 
-    // Initialize variables
+    // initialize variables
     int current_block = superblock[_FREE_BLOCK_HEAD];
     int last_free_block = -1;
     int last_allocated_block = -1;
 
-    // Traverse the free block list
+    // traverse the free block list
     while (current_block != -1) {
         char block[BLOCKSIZE];
         if (readBlock(mounted_disk, current_block, block) == -1) {
@@ -811,7 +822,7 @@ void tfs_defrag() {
             }
         }
 
-        // Update block pointers
+        // update block pointers
         if (last_allocated_block != -1) {
             char last_allocated_block_data[BLOCKSIZE];
             if (readBlock(mounted_disk, last_allocated_block, last_allocated_block_data) == -1) {
@@ -825,18 +836,157 @@ void tfs_defrag() {
             }
         }
 
-        // Update the free block list
+        // update the free block list
         last_free_block = current_block;
         current_block = block[_BLOCK_POINTER];
 
-        // Update last allocated block
+        // update last allocated block
         last_allocated_block = last_free_block;
     }
 
-    // Update superblock with new head of free block list
+    // update superblock with new head of free block list
     superblock[_FREE_BLOCK_HEAD] = last_free_block;
     superblock[_NUM_FREE_BLOCKS] = 1; // Only one free block at the end
     writeBlock(mounted_disk, SUPERBLOCK_BLOCK_NUM, superblock);
 
     printf("Defragmentation completed.\n");
+}
+
+/* EXTRA CREDIT OPTION D */
+int findFileDescriptorByName(char *name) {
+    for (int i = 0; i < FILE_TABLE_SIZE; i++) {
+        if (fileTable[i].inodeBlock != -1) {
+            //printf("fileTable[i].inodeBlock: %d\n", fileTable[i].inodeBlock);
+            char inode[BLOCKSIZE];
+            if (readBlock(mounted_disk, fileTable[i].inodeBlock, inode) == -1) {
+                printf("Failed to read inode block.\n");
+                return -1;
+            }
+            char temp_name[9] = {0};
+            memcpy(&temp_name, &inode[_NAME], 9);
+            //printf("temp_name: %s, file name: %s\n", temp_name, &inode[_NAME]);
+            if (strcmp(temp_name, name) == 0) {
+                return i; 
+            }
+        }
+    }
+    return -1;
+}
+
+void tfs_makeRO(char *name) {
+    if (!mounted) {
+        printf("No file system is currently mounted.\n");
+        return;
+    }
+
+    int fd = findFileDescriptorByName(name);
+    if (fd == -1) {
+        printf("File '%s' not found.\n", name);
+        return;
+    }
+
+    char inode[BLOCKSIZE];
+    if (readBlock(mounted_disk, fileTable[fd].inodeBlock, inode) == -1) {
+        printf("Failed to read inode block.\n");
+        return;
+    }
+
+    // update inode to mark the file as read-only
+    inode[_READ_WRITE_FLAG] = READ_ONLY_FLAG;
+
+    if (writeBlock(mounted_disk, fileTable[fd].inodeBlock, inode) == -1) {
+        printf("Failed to write inode block.\n");
+        return;
+    }
+
+    printf("File '%s' is now read-only.\n", name);
+}
+
+void tfs_makeRW(char *name) {
+    if (!mounted) {
+        printf("No file system is currently mounted.\n");
+        return;
+    }
+
+    int fd = findFileDescriptorByName(name);
+    if (fd == -1) {
+        printf("File '%s' not found.\n", name);
+        return;
+    }
+
+    char inode[BLOCKSIZE];
+    if (readBlock(mounted_disk, fileTable[fd].inodeBlock, inode) == -1) {
+        printf("Failed to read inode block.\n");
+        return;
+    }
+
+    // update inode to mark the file as read-write
+    inode[_READ_WRITE_FLAG] = READ_WRITE_FLAG;
+
+    if (writeBlock(mounted_disk, fileTable[fd].inodeBlock, inode) == -1) {
+        printf("Failed to write inode block.\n");
+        return;
+    }
+
+    printf("File '%s' is now read-write.\n", name);
+}
+
+
+void tfs_writeByte(fileDescriptor FD, int offset, unsigned int data) {
+    if (!mounted) {
+        printf("No file system is currently mounted.\n");
+        return;
+    }
+
+    if (FD < 0 || FD >= FILE_TABLE_SIZE || fileTable[FD].inodeBlock == -1) {
+        printf("Invalid file descriptor.\n");
+        return;
+    }
+
+    char inode[BLOCKSIZE];
+    if (readBlock(mounted_disk, fileTable[FD].inodeBlock, inode) == -1) {
+        printf("Failed to read inode block.\n");
+        return;
+    }
+
+    // check if the file is read-only
+    if (inode[_READ_WRITE_FLAG] == READ_ONLY_FLAG) {
+        printf("File is read-only. Cannot write byte.\n");
+        return;
+    }
+
+    // calculate the block and offset where the byte should be written
+    int block_index = offset / DATA_BLOCK_DATA_SIZE;
+    int block_offset = offset % DATA_BLOCK_DATA_SIZE;
+
+    // read the block where the byte should be written
+    int data_block = inode[_CONTENT_BLOCK_HEAD];
+    for (int i = 0; i < block_index; i++) {
+        if (data_block == -1) {
+            printf("Offset exceeds file size.\n");
+            return;
+        }
+        if (readBlock(mounted_disk, data_block, inode) == -1) {
+            printf("Failed to read data block.\n");
+            return;
+        }
+        data_block = inode[_BLOCK_POINTER];
+    }
+
+    char block[BLOCKSIZE];
+    if (readBlock(mounted_disk, data_block, block) == -1) {
+        printf("Failed to read data block.\n");
+        return;
+    }
+
+    // write the byte to the block
+    block[block_offset + 4] = data;
+
+    // write the updated block back to disk
+    if (writeBlock(mounted_disk, data_block, block) == -1) {
+        printf("Failed to write data block.\n");
+        return;
+    }
+
+    printf("Byte written successfully.\n");
 }

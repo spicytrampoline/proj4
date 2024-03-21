@@ -30,6 +30,10 @@
 #define _LAST_MODIFICATION_TIME 29   // time_t is 8 bytes
 #define _LAST_ACCESS_TIME 37   // time_t is 8 bytes
 
+#define _READ_WRITE_FLAG 80
+#define READ_ONLY_FLAG 0
+#define READ_WRITE_FLAG 1
+
 
 
 typedef struct {
