@@ -973,11 +973,15 @@ void tfs_writeByte(fileDescriptor FD, int offset, unsigned int data) {
         data_block = inode[_BLOCK_POINTER];
     }
 
+    //printf("%d\n", data_block);
+
     char block[BLOCKSIZE];
     if (readBlock(mounted_disk, data_block, block) == -1) {
         printf("Failed to read data block.\n");
         return;
     }
+
+    //printf("%s\n", block);
 
     // write the byte to the block
     block[block_offset + 4] = data;

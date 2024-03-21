@@ -50,6 +50,100 @@ void print_file_contents(char* filename, int fd, int size)
     printf("   %s file contents: %s\n", filename, file_contents);
 }
 
+// test makeRO and makeRW functions
+void test_makeRO_RW() {
+    printf("Testing makeRO and makeRW functions...\n");
+
+    // create a file
+    fileDescriptor fd = tfs_openFile("test.txt");
+    if (fd == -1) {
+        printf("Failed to create test file.\n");
+        return;
+    }
+
+    // make the file read-only
+    tfs_makeRO("test.txt");
+
+    // try to write to the read-only file
+    if (tfs_writeFile(fd, "Hello, World!", sizeof("Hello, World!")) == 0) {
+        printf("Error: Writing to read-only file succeeded.\n");
+    }
+
+    // make the file read-write again
+    tfs_makeRW("test.txt");
+
+    // write to the file
+    if (tfs_writeFile(fd, "Hello, World!", sizeof("Hello, World!")) != 0) {
+        printf("Error: Writing to read-write file failed.\n");
+    }
+
+    print_file_contents("test.txt", fd, sizeof("Hello, World!"));
+
+    // close the file
+    tfs_closeFile(fd);
+
+    printf("makeRO and makeRW functions test completed.\n");
+}
+
+// test writeByte function
+void test_writeByte() {
+    printf("Testing writeByte function...\n");
+
+    // create a file
+    fileDescriptor fd = tfs_openFile("te.txt");
+    if (fd == -1) {
+        printf("Failed to create test file.\n");
+        return;
+    }
+
+    // write some data to the file
+    if (tfs_writeFile(fd, "This is a test file.", 20) != 0) {
+        printf("Failed to write data to file.\n");
+        tfs_closeFile(fd);
+        return;
+    }
+
+    // printf("fd: %d\n", fd);
+    // print_file_contents("te.txt", fd, 5);
+
+    // write a byte at offset 5
+    tfs_writeByte(fd, 5, 'X');
+
+    // close the file
+    tfs_closeFile(fd);
+
+    // re-open the file to read and check the byte
+    fd = tfs_openFile("te.txt");
+    if (fd == -1) {
+        printf("Failed to re-open test file.\n");
+        return;
+    }
+
+    //read the byte at offset 5
+    // char byte;
+    // if (tfs_readByte(fd, &byte) == -1) {
+    //     printf("Failed to read byte from file.\n");
+    //     tfs_closeFile(fd);
+    //     return;
+    // }
+
+    print_file_contents("te.txt", fd, sizeof("This is a test file."));
+
+    //verify the byte at offset 5
+    // if (byte != 'X') {
+    //     printf("Error: Byte not written at correct offset.\n");
+    // } else {
+    //     printf("Byte written successfully at offset 5: %c\n", byte);
+    // }
+
+    // close the file
+    tfs_closeFile(fd);
+
+    printf("writeByte function test completed.\n");
+}
+
+
+
 
 //********************************************************************************
 //  Testing Helpers
@@ -221,7 +315,14 @@ int main() {
 
     /* Testing find file descriptor by name */
     testFD = findFileDescriptorByName("NewName");
-    printf("actual FD : %d, guessed FD: %d\n", oneBlockFD, testFD);
+
+    //printf("actual FD : %d, guessed FD: %d\n", oneBlockFD, testFD);
+
+    // Test makeRO and makeRW functions
+    test_makeRO_RW();
+
+    // Test writeByte function
+    test_writeByte();
 
     /* and finishing the tests */
     tfs_closeFile(oneBlockFD);
