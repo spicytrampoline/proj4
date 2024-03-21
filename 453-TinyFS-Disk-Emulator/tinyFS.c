@@ -4,6 +4,7 @@
 #include <time.h>   // for timestamps
 #include "libDisk.h" // Include the disk emulator library
 #include "tinyFS.h"
+#include <stdbool.h>
 
 FileTableEntry fileTable[FILE_TABLE_SIZE] = {0}; // file table to track open files
 
@@ -207,6 +208,12 @@ fileDescriptor tfs_openFile(char *name) {
     if (name == NULL) {
         printf("Empty name.\n");
         return -1;
+    }
+
+    int existingFD = findFileDescriptorByName(name);
+    if (existingFD != -1) {
+        printf("File is already open.\n");
+        return existingFD;
     }
 
     // check if file already exists- need to walk inode list 
@@ -717,7 +724,7 @@ int tfs_rename(fileDescriptor FD, char* newName) {
 void tfs_readdir() {
     if (!mounted) {
         printf("No file system is currently mounted.\n");
-        return -1; // failure (no file system mounted)
+        return; // failure (no file system mounted)
     }
     int walk = superblock[_ROOT_INODE_BLOCK];    // ptr to inodes
     char inode[BLOCKSIZE];
@@ -993,4 +1000,78 @@ void tfs_writeByte(fileDescriptor FD, int offset, unsigned int data) {
     }
 
     printf("Byte written successfully.\n");
+}
+
+/* EXTRA CREDIT OPTION H */
+bool checkFileSystemConsistency() {
+    if(!checkFreeBlocksConsistency()) {
+        printf("Free blocks list is inconsistent.\n");
+        return false;
+    }
+    
+    if(!checkDataBlocksConsistency()) {
+        printf("Data blocks list is inconsistent.\n");
+        return false;
+    }
+    /* keep adding checks for different problems */
+    printf("WE GOOD!\n");
+    return true;
+}
+
+bool checkFreeBlocksConsistency() {
+    int free_block_count = 0;
+    char block[BLOCKSIZE];
+    
+    int free_block = superblock[_FREE_BLOCK_HEAD];
+    while(free_block != -1) {
+        if(readBlock(mounted_disk, free_block, block) == -1) {
+            printf("Failed to read block.\n");
+            return false;
+        }
+        // is block marked as free?
+        if(block[_BLOCK_TYPE] != 4) {
+            printf("Block %d marked as free but has invalid type.\n", free_block);
+            return false;    //Block %d marked as free but has invalid type.
+        }
+        free_block_count++;
+        free_block = block[_BLOCK_POINTER];
+    }
+
+    // check that count is same as super block count
+    if (free_block_count != superblock[_NUM_FREE_BLOCKS]) {
+        printf("Free block count mismatch is present.\n");
+        return false;   //Free block count mismatch is present.
+    }
+
+    return true;
+}
+
+bool checkDataBlocksConsistency() {
+    char inode[BLOCKSIZE];
+    char block[BLOCKSIZE];
+    int inode_walk = superblock[_ROOT_INODE_BLOCK];
+    while(inode_walk != -1) {
+        if(readBlock(mounted_disk, inode_walk, inode) == -1) {
+            return false;
+        }
+        if(inode[_BLOCK_TYPE] != 2) {
+            return false;    //Block %d is not marked as an inode.
+        }
+
+        //looking through the linked list of data blocks for each inode
+        int data_block = inode[_CONTENT_BLOCK_HEAD];
+        while (data_block != -1) {
+            if(readBlock(mounted_disk, data_block, block) == -1) {
+                return false;
+            }
+            if(block[_BLOCK_TYPE] != 3) {
+                printf("Block %d is not marked as a data block.\n", data_block);
+                return false;    //Block %d is not marked as a data block.
+            }
+
+            data_block = block[_BLOCK_POINTER];
+        }
+        inode_walk = inode[_BLOCK_POINTER];
+    }
+    return true;
 }

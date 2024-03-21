@@ -2,6 +2,12 @@ Frank Assuma
 Savannah Bosley
 Sophie Russ
 
-For optional, we implemented directory listing (b) and time stamps (e). 
+For optional, we implemented:
+    directory listing (b)
+    time stamps (e)
 
-For extra credit, we implemented -.
+For extra credit, we implemented: 
+    Read-only and writeByte support (d)
+    file system consistency checks (h)
+    ...
+    and we attempted defragmentation (a)

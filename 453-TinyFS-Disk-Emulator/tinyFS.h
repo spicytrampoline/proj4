@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include "libDisk.h" // Include the disk emulator library
 
 #define BLOCKSIZE 256
@@ -30,11 +31,12 @@
 #define _LAST_MODIFICATION_TIME 29   // time_t is 8 bytes
 #define _LAST_ACCESS_TIME 37   // time_t is 8 bytes
 
+//macros for read-write-only
 #define _READ_WRITE_FLAG 80
 #define READ_ONLY_FLAG 0
 #define READ_WRITE_FLAG 1
 
-
+#define FILE_NAME_LENGTH 8
 
 typedef struct {
     int inodeBlock; // block number of the inode block containing this file's inode
@@ -54,9 +56,15 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size);
 int tfs_deleteFile(fileDescriptor FD);
 int tfs_readByte(fileDescriptor FD, char *buffer);
 int tfs_seek(fileDescriptor FD, int offset);
-int tfs_rename(fileDescriptor FD, char* newName);   // extra credit b
-void tfs_readdir(); // extra credit b
-int tfs_readFileInfo(fileDescriptor FD);    // extra credit e
+int tfs_rename(fileDescriptor FD, char* newName);   // optional b
+void tfs_readdir();                                 // optional b
+int tfs_readFileInfo(fileDescriptor FD);            // optional e
+void tfs_makeRO(char *name);                         // extra credit d
+void tfs_makeRW(char *name);                         // extra credit d
+void tfs_writeByte(fileDescriptor FD, int offset, unsigned int data);    // extra credit d
+bool checkFileSystemConsistency();           // extra credit h
+bool checkFreeBlocksConsistency();           // extra credit h
+bool checkDataBlocksConsistency();           // extra credit h
 
 // TODO Remove these
 int tfs_get_mounted_disk( );

@@ -191,7 +191,7 @@ int main() {
     printf("actual FD : %d, guessed FD: %d\n", oneBlockFD, testFD);
     //debug_print_filesystem();
 
-    tfs_makeRO("1Block");
+    //tfs_makeRO("1Block");
 
     //debug_write_fileblocks();
     //print_file_contents("1Block", oneBlockFD, 20);
@@ -274,7 +274,7 @@ int main() {
 
     /* writing to file after unmounting -- should error */
     char moreWritingStuff[1000] = "I had a tasty burrito today!";
-    tfs_writeFile(1, moreWritingStuff, sizeof(moreWritingStuff));
+    tfs_writeFile(oneBlockFD, moreWritingStuff, sizeof(moreWritingStuff));
 
     //sleep(4);
     /* opening + writing to file in file system after unmount-mount + testing creation time */
@@ -304,7 +304,9 @@ int main() {
     tfs_readFileInfo(oneBlockFD);
 
     twoBlockFD = tfs_openFile("2Block");
-    printf("\ttwoBlockFD: %d\n", twoBlockFD);
+    //printf("\ttwoBlockFD: %d\n", twoBlockFD);
+
+    /* testing renaming after closing */
     tfs_closeFile(twoBlockFD);
     tfs_rename(twoBlockFD, "NewName2");
     tfs_readFileInfo(twoBlockFD);
@@ -316,13 +318,17 @@ int main() {
     /* Testing find file descriptor by name */
     testFD = findFileDescriptorByName("NewName");
 
-    //printf("actual FD : %d, guessed FD: %d\n", oneBlockFD, testFD);
+    printf("actual FD : %d, guessed FD: %d\n", oneBlockFD, testFD);
+    print_file_contents("NewName", testFD, 5);
 
     // Test makeRO and makeRW functions
     test_makeRO_RW();
 
     // Test writeByte function
     test_writeByte();
+
+    /* testing file system consistency: */
+    checkFileSystemConsistency();
 
     /* and finishing the tests */
     tfs_closeFile(oneBlockFD);
