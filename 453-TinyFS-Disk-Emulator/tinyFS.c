@@ -143,7 +143,7 @@ int tfs_mount(char *diskname) {
         printf("Failed to open disk.\n");
         return -1; // failure (unable to open disk file) so return neg
     }
-    printf("in mount, opened disk %d\n", disk);
+    //printf("in mount, opened disk %d\n", disk);
 
     // read superblock from disk via libDisk    
     if (readBlock(disk, SUPERBLOCK_BLOCK_NUM, &superblock) != 0) {
@@ -164,9 +164,9 @@ int tfs_mount(char *diskname) {
     // update mounted flag and disk number
     mounted = 1;
     mounted_disk = disk;
-    printf("tfs_mount: mounted_disk = %d\n", mounted_disk);
+    //printf("tfs_mount: mounted_disk = %d\n", mounted_disk);
 
-    //printf("File system mounted successfully.\n");
+    printf("File system mounted successfully.\n");
 
     for (int i = 0; i < FILE_TABLE_SIZE; i++) {
         releaseFileDescriptor(i);        
@@ -244,6 +244,14 @@ fileDescriptor tfs_openFile(char *name) {
         new_inode[_NAME + 8] = '\0';  // end file name in null   
         new_inode[_SIZE]= 0;    // size of data extent
         new_inode[_CONTENT_BLOCK_HEAD] = -1; // no data yet- will be head for data linked list (content blocks)
+
+        time_t current_time = time(NULL);
+        char timeBytes[8];
+        memcpy(timeBytes, &current_time, sizeof(current_time));
+
+        memcpy(&(new_inode[_CREATION_TIME]), timeBytes, sizeof(timeBytes)); //update creation time
+        memcpy(&(new_inode[_LAST_ACCESS_TIME]), timeBytes, sizeof(timeBytes)); // update last access time
+        memcpy(&(new_inode[_LAST_MODIFICATION_TIME]), timeBytes, sizeof(timeBytes)); // update last modification time
         
         inodeIndex = get_free_block();        
         //printf("new file: %s, inode: %d\n", name, inodeIndex);
@@ -290,6 +298,11 @@ int tfs_closeFile(fileDescriptor FD) {
 
 int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {    
     // Implement writing to a file in the TinyFS filesystem
+    if (!mounted) {
+        printf("No file system is currently mounted.\n");
+        return -1; // failure (no file system mounted)
+    }
+
     if (FD < 0 || FD >= FILE_TABLE_SIZE) {
         printf("Invalid file descriptor.\n");
         return -1; // failure (Invalid file descriptor)
@@ -346,13 +359,26 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
         writeBlock(mounted_disk, data_block_idx, block_data);
 
         // TODO MODIFICATION TIME
-        time_t current_time = time(NULL);
-        char timeBytes[8];
-        memcpy(timeBytes, &current_time, sizeof(current_time));
-        memcpy(&(inode[_LAST_MODIFICATION_TIME]), timeBytes, 8);
-        //memcpy(&(inode[_LAST_MODIFICATION_TIME]), current_time, 8);
+        // time_t current_time = time(NULL);
+        // char timeBytes[8];
+        // memcpy(timeBytes, &current_time, sizeof(current_time));
+        // memcpy(&(inode[_LAST_MODIFICATION_TIME]), timeBytes, 8);
+        // //memcpy(&(inode[_LAST_MODIFICATION_TIME]), current_time, 8);
 
     }
+
+    time_t current_time = time(NULL);
+    char timeBytes[8];
+    memcpy(timeBytes, &current_time, sizeof(current_time));
+
+    memcpy(&(inode[_LAST_MODIFICATION_TIME]), timeBytes, sizeof(timeBytes)); // update last modification time
+    memcpy(&(inode[_LAST_ACCESS_TIME]), timeBytes, sizeof(timeBytes)); // update last access time
+
+    // write the updated inode back to disk
+    // if (writeBlock(mounted_disk, fileTable[FD].inodeBlock, inode) == -1) {
+    //     printf("Failed to write inode block.\n");
+    //     return -1; // failure (unable to write inode block)
+    // }
 
     writeBlock(mounted_disk, SUPERBLOCK_BLOCK_NUM, superblock); //add updated write block
     
@@ -369,6 +395,11 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
 
 int tfs_deleteFile(fileDescriptor FD) {
     // Implement deleting a file in the TinyFS filesystem
+    if (!mounted) {
+        printf("No file system is currently mounted.\n");
+        return -1; // failure (no file system mounted)
+    }
+
     if (FD < 0 || FD >= FILE_TABLE_SIZE) {
         printf("Invalid file descriptor.\n");
         return -1; // failure (Invalid file descriptor)
@@ -420,6 +451,11 @@ int tfs_deleteFile(fileDescriptor FD) {
 
 int tfs_readByte(fileDescriptor FD, char *buffer) {
     // Implement reading a byte from a file in the TinyFS filesystem
+    if (!mounted) {
+        printf("No file system is currently mounted.\n");
+        return -1; // failure (no file system mounted)
+    }
+
     if (FD < 0 || FD >= FILE_TABLE_SIZE) {
         printf("Invalid file descriptor.\n");
         return -1; // failure (Invalid file descriptor)
@@ -454,6 +490,16 @@ int tfs_readByte(fileDescriptor FD, char *buffer) {
         nextBlock = block[_BLOCK_POINTER];
     }
 
+    time_t current_time = time(NULL);
+    char timeBytes[8];
+    memcpy(timeBytes, &current_time, sizeof(current_time));
+    memcpy(&(inode[_LAST_ACCESS_TIME]), timeBytes, sizeof(timeBytes)); // update last access time
+
+    if (writeBlock(mounted_disk, fileTable[FD].inodeBlock, inode) == -1) {
+        printf("Error updating inode block with access time in function tfs_readByte.\n");
+        return -1;
+    }
+
     int blockOffset = offset - (block_num * DATA_BLOCK_DATA_SIZE);
     *buffer = block[4+blockOffset];
     fileTable[FD].filePointer++;
@@ -465,6 +511,11 @@ int tfs_readByte(fileDescriptor FD, char *buffer) {
 
 int tfs_seek(fileDescriptor FD, int offset) {
     // Implement seeking within a file in the TinyFS filesystem
+    if (!mounted) {
+        printf("No file system is currently mounted.\n");
+        return -1; // failure (no file system mounted)
+    }
+
     if (FD < 0 || FD >= FILE_TABLE_SIZE) {
         printf("Invalid file descriptor.\n");
         return -1; // failure (Invalid file descriptor)
@@ -618,6 +669,10 @@ void debug_print_filesystem()
 
 /* This func changes new name*/
 int tfs_rename(fileDescriptor FD, char* newName) {
+    if (!mounted) {
+        printf("No file system is currently mounted.\n");
+        return -1; // failure (no file system mounted)
+    }
     if (FD < 0 || FD >= FILE_TABLE_SIZE) {
         printf("The FD is invalid.\n");
         return -1; // failure (Invalid file descriptor)
@@ -628,10 +683,19 @@ int tfs_rename(fileDescriptor FD, char* newName) {
     }
 
     char inode[BLOCKSIZE];
-    readBlock(mounted_disk, fileTable[FD].inodeBlock, &inode);
+    if (readBlock(mounted_disk, fileTable[FD].inodeBlock, &inode) == -1) {
+        printf("Unable to access file inode. Make sure file is open.\n");
+        return -1;
+    }
 
     memset(&(inode[_NAME]), '\0', 9); // set MEMORY to null for 9 spots . to blank out old name
     strcpy(&(inode[_NAME]), newName);   // copy new line in with null ending
+
+    time_t current_time = time(NULL);
+    char timeBytes[8];
+    memcpy(timeBytes, &current_time, sizeof(current_time));
+    memcpy(&(inode[_LAST_ACCESS_TIME]), timeBytes, sizeof(timeBytes)); // update last access time
+    memcpy(&(inode[_LAST_MODIFICATION_TIME]), timeBytes, sizeof(timeBytes)); // update ast modification time
 
     writeBlock(mounted_disk, fileTable[FD].inodeBlock, &inode);
 
@@ -640,19 +704,30 @@ int tfs_rename(fileDescriptor FD, char* newName) {
 
 /* We did not implement hierarchy, so we just need to walk the inodes and print the filenames. */
 void tfs_readdir() {
+    if (!mounted) {
+        printf("No file system is currently mounted.\n");
+        return -1; // failure (no file system mounted)
+    }
     int walk = superblock[_ROOT_INODE_BLOCK];    // ptr to inodes
     char inode[BLOCKSIZE];
+    printf("\nDisplaying files from root directory: \n");
     while (walk != -1) {
         readBlock(mounted_disk, walk, &inode);
         printf("%s\n", &(inode[_NAME]));
 
         walk = inode[_BLOCK_POINTER];
     }
+    printf("\n");
 }
 
 
 /* EXTRA CREDIT OPTION E */
 int tfs_readFileInfo(fileDescriptor FD) {
+    // Check if mounted
+    if (!mounted) {
+        printf("No file system is currently mounted.\n");
+        return -1; // failure (no file system mounted)
+    }
     // Check fd valid
     if (FD < 0 || FD >= FILE_TABLE_SIZE) {
         printf("The FD is invalid.\n");
@@ -661,11 +736,107 @@ int tfs_readFileInfo(fileDescriptor FD) {
     
     // get inode
     char inode[BLOCKSIZE];
-    readBlock(mounted_disk, fileTable[FD].inodeBlock, &inode);
+    if (readBlock(mounted_disk, fileTable[FD].inodeBlock, inode) == -1) {
+        printf("Unable to access file contents.\n");
+        return -1;
+    }
     printf("File: %s\n", &(inode[_NAME]));
-    printf("\tCreation: %d\n", &(inode[_CREATION_TIME]));
-    printf("\tAccess: \n", &(inode[_LAST_ACCESS_TIME]));
-    printf("\tModify: \n", &(inode[_LAST_MODIFICATION_TIME]));
+
+    // convert and print creation time
+    time_t creation_time;
+    memcpy(&creation_time, &(inode[_CREATION_TIME]), sizeof(time_t));
+    printf("\tCreation: %s", asctime(localtime(&creation_time)));
+
+    // convert and print last access time
+    time_t access_time;
+    memcpy(&access_time, &(inode[_LAST_ACCESS_TIME]), sizeof(time_t));
+    printf("\tAccess: %s", asctime(localtime(&access_time)));
+
+    // convert and print last modification time
+    time_t modification_time;
+    memcpy(&modification_time, &(inode[_LAST_MODIFICATION_TIME]), sizeof(time_t));
+    printf("\tModify: %s", asctime(localtime(&modification_time)));
 
     return 0;
+}
+
+void tfs_displayFragments() {
+    if (!mounted) {
+        printf("No file system is currently mounted.\n");
+        return;
+    }
+
+    printf("Fragmentation Map:\n");
+
+    int block_num = superblock[_FREE_BLOCK_HEAD];
+    while (block_num != -1) {
+        printf("Block %d: Allocated\n", block_num);
+        char block[BLOCKSIZE];
+        if (readBlock(mounted_disk, block_num, block) == -1) {
+            printf("Failed to read block %d\n", block_num);
+            return;
+        }
+        block_num = block[_BLOCK_POINTER];
+    }
+
+    printf("End of Fragmentation Map\n");
+}
+
+void tfs_defrag() {
+    if (!mounted) {
+        printf("No file system is currently mounted.\n");
+        return;
+    }
+
+    printf("Defragmenting filesystem...\n");
+
+    // Initialize variables
+    int current_block = superblock[_FREE_BLOCK_HEAD];
+    int last_free_block = -1;
+    int last_allocated_block = -1;
+
+    // Traverse the free block list
+    while (current_block != -1) {
+        char block[BLOCKSIZE];
+        if (readBlock(mounted_disk, current_block, block) == -1) {
+            printf("Failed to read block %d\n", current_block);
+            return;
+        }
+
+        // Move the block to the end of the disk
+        if (last_free_block != -1) {
+            if (writeBlock(mounted_disk, last_free_block, block) == -1) {
+                printf("Failed to write block %d\n", last_free_block);
+                return;
+            }
+        }
+
+        // Update block pointers
+        if (last_allocated_block != -1) {
+            char last_allocated_block_data[BLOCKSIZE];
+            if (readBlock(mounted_disk, last_allocated_block, last_allocated_block_data) == -1) {
+                printf("Failed to read block %d\n", last_allocated_block);
+                return;
+            }
+            last_allocated_block_data[_BLOCK_POINTER] = last_free_block;
+            if (writeBlock(mounted_disk, last_allocated_block, last_allocated_block_data) == -1) {
+                printf("Failed to write block %d\n", last_allocated_block);
+                return;
+            }
+        }
+
+        // Update the free block list
+        last_free_block = current_block;
+        current_block = block[_BLOCK_POINTER];
+
+        // Update last allocated block
+        last_allocated_block = last_free_block;
+    }
+
+    // Update superblock with new head of free block list
+    superblock[_FREE_BLOCK_HEAD] = last_free_block;
+    superblock[_NUM_FREE_BLOCKS] = 1; // Only one free block at the end
+    writeBlock(mounted_disk, SUPERBLOCK_BLOCK_NUM, superblock);
+
+    printf("Defragmentation completed.\n");
 }

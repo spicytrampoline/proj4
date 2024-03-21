@@ -41,7 +41,10 @@ void print_file_contents(char* filename, int fd, int size)
 
     for (size_t i = 0; i < size; i++)
     {
-        tfs_readByte(fd, &file_contents[i]);
+        if (tfs_readByte(fd, &file_contents[i]) == -1) {
+            printf("Cannot read file contents.\n");
+            return;
+        }
     }
     
     printf("   %s file contents: %s\n", filename, file_contents);
@@ -88,21 +91,124 @@ int main() {
     }
 
     //debug_print_filesystem();
-    int oneBlockFD = createFile("1Block", 20);
+    int oneBlockFD = createFile("1Block", 540);
     //debug_print_filesystem();
 
     //debug_write_fileblocks();
     //print_file_contents("1Block", oneBlockFD, 20);
 
     //printf("\n\nRenaming file...\n");
-    int twoBlockFD = createFile("2Block", DATA_BLOCK_DATA_SIZE + 1);
+    int twoBlockFD = createFile("2Block", 400);
 
+    /* testing renaming file from "1Block" to "Block" */
     tfs_rename(oneBlockFD, "Block");
 
+    /* checking file metadata */
     tfs_readFileInfo(twoBlockFD);
+    tfs_readFileInfo(oneBlockFD);
+
+    print_file_contents("Block", oneBlockFD, 540);
+
+    /* testing overwriting a file with multiple allocated blocks */
+    char overwrite[75] = "this is overwriting!";
+    tfs_writeFile(oneBlockFD, overwrite, sizeof(overwrite));
+
+    print_file_contents("Block", oneBlockFD, 75);
+    print_file_contents("2Block", twoBlockFD, 400);
     //debug_print_filesystem();
 
-    //tfs_readdir();
+    /* testing reading the directory from the root */
+    tfs_readdir();
+
+    tfs_closeFile(oneBlockFD);
+
+    /* testing for writing to closed file -- should error */
+    char overwrite2[75] = "overwriting the file again!";
+    tfs_writeFile(oneBlockFD, overwrite2, sizeof(overwrite2));
+
+    /* testing for reading file info of a closed file -- should erorr */
+    tfs_readFileInfo(oneBlockFD);
+    print_file_contents("Block", oneBlockFD, 75);
+
+    /* testing readdir after closing a file -- should still show the file in directory */
+    tfs_readdir();
+    
+    /* attempting to create a file with size greater than possible -- should error */
+    int threeBlockFD = createFile("NewFile", 10000);
+    printf("threeBlockFD: %d\n", threeBlockFD);
+
+    tfs_readdir();
+
+    tfs_closeFile(threeBlockFD);
+    tfs_closeFile(oneBlockFD);
+
+    /* testing that readdir works despite all files being closed */
+    tfs_readdir();
+
+    /* re-opening an existing file -- should allow us to read its previous contents */
+    twoBlockFD = tfs_openFile("2Block");
+    print_file_contents("2Block", twoBlockFD, 400);
+
+    /* overwriting the data that was in 2Block before closing/opening */
+    char writingStuff[1000] = "This should overwrite what 2Block had.";
+    tfs_writeFile(twoBlockFD, writingStuff, sizeof(writingStuff));
+
+    print_file_contents("2Block", twoBlockFD, 1000);
+
+    /* testing unmounting the system */
+    tfs_closeFile(twoBlockFD);
+    tfs_unmount();
+
+    tfs_readdir();
+    twoBlockFD = tfs_openFile("2Block");
+
+
+    /* testing re-mounting the same disk */
+    tfs_mount(filename);
+
+    tfs_readdir();
+
+    /* writing to file after unmounting -- should error */
+    char moreWritingStuff[1000] = "I had a tasty burrito today!";
+    tfs_writeFile(1, moreWritingStuff, sizeof(moreWritingStuff));
+
+    sleep(4);
+    /* opening + writing to file in file system after unmount-mount + testing creation time */
+    oneBlockFD = tfs_openFile("Block");
+    tfs_readFileInfo(oneBlockFD);
+    print_file_contents("Block", oneBlockFD, 75);
+
+    /* testing creation + modification time after re-opening */
+    sleep(10);
+    oneBlockFD = tfs_openFile("Block");
+    tfs_writeFile(oneBlockFD, moreWritingStuff, sizeof(moreWritingStuff));
+    print_file_contents("Block", oneBlockFD, sizeof(moreWritingStuff));
+    tfs_readFileInfo(oneBlockFD);
+
+    /* testing access time from reading */
+    sleep(10);
+    print_file_contents("Block", oneBlockFD, sizeof(moreWritingStuff));
+    tfs_readFileInfo(oneBlockFD);
+    //tfs_readFileInfo(twoBlockFD);
+    //tfs_readFileInfo(threeBlockFD);
+
+    /* testing access time from renaming */
+    sleep(5);
+    tfs_rename(oneBlockFD, "NewName");
+    tfs_readFileInfo(oneBlockFD);
+
+    twoBlockFD = tfs_openFile("2Block");
+    tfs_closeFile(twoBlockFD);
+    tfs_rename(twoBlockFD, "NewName2");
+    tfs_readFileInfo(twoBlockFD);
+
+    tfs_defrag();
+
+    tfs_displayFragments();
+
+    /* and finishing the tests */
+    tfs_closeFile(oneBlockFD);
+    tfs_unmount();
 
     //int twoBlockFD = createFile("2Block", DATA_BLOCK_DATA_SIZE + 1);
     //debug_print_filesystem();
